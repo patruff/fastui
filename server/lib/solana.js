@@ -114,9 +114,18 @@ export async function buildPurchaseTransaction(userWalletAddress) {
   };
 }
 
-// Verify a signed transaction was confirmed on-chain and add credits
+// Set of already-redeemed signatures to prevent double-credit
+const redeemedSignatures = new Set();
+
+// Verify a signed transaction was confirmed on-chain and add credits.
+// Checks that USDC actually transferred to the owner wallet.
 export async function verifyAndAddCredits(userId, signature) {
   try {
+    // Prevent double-redeem of same tx
+    if (redeemedSignatures.has(signature)) {
+      return { success: false, error: 'Transaction already redeemed' };
+    }
+
     // Wait for confirmation
     const result = await connection.confirmTransaction(signature, 'confirmed');
 
@@ -124,7 +133,7 @@ export async function verifyAndAddCredits(userId, signature) {
       return { success: false, error: 'Transaction failed on-chain' };
     }
 
-    // Verify the transaction details
+    // Fetch full transaction to verify recipient
     const tx = await connection.getTransaction(signature, {
       commitment: 'confirmed',
       maxSupportedTransactionVersion: 0,
@@ -134,7 +143,35 @@ export async function verifyAndAddCredits(userId, signature) {
       return { success: false, error: 'Transaction not found' };
     }
 
-    // Add credits to user
+    // Verify the transaction includes a transfer to the owner's USDC account
+    const ownerTokenAccount = await getAssociatedTokenAddress(usdcMint, ownerWallet);
+    const accountKeys = tx.transaction.message.staticAccountKeys
+      ? tx.transaction.message.staticAccountKeys.map(k => k.toBase58())
+      : tx.transaction.message.accountKeys.map(k => k.toBase58());
+
+    const ownerTokenStr = ownerTokenAccount.toBase58();
+    if (!accountKeys.includes(ownerTokenStr)) {
+      return { success: false, error: 'Payment not sent to owner wallet' };
+    }
+
+    // Check minimum amount via pre/post token balances
+    const postBalances = tx.meta?.postTokenBalances || [];
+    const preBalances = tx.meta?.preTokenBalances || [];
+
+    const ownerAccountIdx = accountKeys.indexOf(ownerTokenStr);
+    const postEntry = postBalances.find(b => b.accountIndex === ownerAccountIdx);
+    const preEntry = preBalances.find(b => b.accountIndex === ownerAccountIdx);
+
+    if (postEntry && preEntry) {
+      const received = Number(postEntry.uiTokenAmount.amount) - Number(preEntry.uiTokenAmount.amount);
+      const expectedAmount = PRICE_PER_PACK_USDC * Math.pow(10, USDC_DECIMALS);
+      if (received < expectedAmount) {
+        return { success: false, error: `Insufficient payment: received ${received / Math.pow(10, USDC_DECIMALS)} USDC, need ${PRICE_PER_PACK_USDC}` };
+      }
+    }
+
+    // Mark as redeemed and add credits
+    redeemedSignatures.add(signature);
     const credits = getUserCredits(userId);
     credits.remaining += CREDITS_PER_PACK;
     credits.totalPurchased += CREDITS_PER_PACK;

@@ -9,6 +9,7 @@ import VoiceButton from './components/VoiceButton';
 import TranscriptPanel from './components/TranscriptPanel';
 import CodePanel from './components/CodePanel';
 import PaymentModal from './components/PaymentModal';
+import DownloadModal from './components/DownloadModal';
 
 export default function App() {
   // Auth state
@@ -26,6 +27,7 @@ export default function App() {
   const [showTranscript, setShowTranscript] = useState(false);
   const [showCode, setShowCode] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
+  const [showDownload, setShowDownload] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiSpeaking, setAiSpeaking] = useState(false);
 
@@ -216,6 +218,7 @@ export default function App() {
         onShowCode={() => setShowCode(!showCode)}
         onShowTranscript={() => setShowTranscript(!showTranscript)}
         onClearUI={handleClearUI}
+        onDownload={() => setShowDownload(true)}
         hasCode={!!uiCode}
         selectedElement={selectedElement}
         user={user}
@@ -305,6 +308,13 @@ export default function App() {
         code={uiCode}
         isOpen={showCode}
         onClose={() => setShowCode(false)}
+      />
+
+      {/* Download modal */}
+      <DownloadModal
+        isOpen={showDownload}
+        onClose={() => setShowDownload(false)}
+        uiCode={uiCode}
       />
 
       {/* Payment modal */}

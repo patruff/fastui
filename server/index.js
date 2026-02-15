@@ -235,6 +235,32 @@ Rules:
   }
 });
 
+// Download UI as standalone HTML file
+app.post('/api/download', requireAuth, (req, res) => {
+  const { code } = req.body;
+  if (!code) return res.status(400).json({ error: 'No UI code provided' });
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My UI - Built with Voice UI Builder</title>
+  <script src="https://cdn.tailwindcss.com"><\/script>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  </style>
+</head>
+<body>
+${code}
+</body>
+</html>`;
+
+  res.setHeader('Content-Type', 'text/html');
+  res.setHeader('Content-Disposition', `attachment; filename="voice-ui-${Date.now()}.html"`);
+  res.send(html);
+});
+
 // Serve static files in production
 app.use(express.static(join(__dirname, '..', 'client', 'dist')));
 app.get('*', (req, res) => {

@@ -38,7 +38,10 @@ export default function LoginScreen() {
           </div>
           <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Voice UI Builder</h1>
           <p style={{ fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-            Build UIs with your voice. Get 10 free generations, then pay with USDC on Solana.
+            Speak your UI into existence. Powered by AI, pay with crypto.
+          </p>
+          <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, opacity: 0.7 }}>
+            10 free builds, then 2 USDC per 10 on Solana
           </p>
         </div>
 
@@ -105,12 +108,12 @@ export default function LoginScreen() {
           borderTop: '1px solid var(--border)',
         }}>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginBottom: 12 }}>
-            <Feature icon="10" label="Free generations" />
-            <Feature icon="$2" label="per 10 credits" />
-            <Feature icon="SOL" label="USDC payments" />
+            <Feature icon="10" label="Free builds" />
+            <Feature icon="2" label="USDC / 10 credits" />
+            <Feature icon="DL" label="Download HTML" />
           </div>
-          <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-            Payments via USDC on Solana. Connect your Phantom wallet after sign in.
+          <p style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+            Powered by OpenAI Codex on Cerebras. Pay with Phantom on Solana.
           </p>
         </div>
       </div>
