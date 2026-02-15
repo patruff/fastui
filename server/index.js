@@ -1,22 +1,67 @@
 import express from 'express';
 import cors from 'cors';
+import session from 'express-session';
 import { OpenAI } from 'openai';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
-dotenv.config({ path: join(dirname(fileURLToPath(import.meta.url)), '..', '.env') });
+import { setupPassport, requireAuth } from './lib/auth.js';
+import { initSolana, useCredit, hasCredits, getUserCredits } from './lib/solana.js';
+import authRoutes from './routes/auth.js';
+import creditsRoutes from './routes/credits.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: join(__dirname, '..', '.env') });
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors());
+// Middleware
+app.use(cors({
+  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  credentials: true,
+}));
 app.use(express.json({ limit: '10mb' }));
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: false, // set true in production with HTTPS
+    httpOnly: true,
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  },
+}));
+
+// Auth setup
+setupPassport(app);
+
+// Solana setup
+initSolana();
+
+// Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/credits', creditsRoutes);
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// Credit-check middleware for generation endpoints
+function requireCredits(req, res, next) {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  if (!hasCredits(req.user.id)) {
+    return res.status(402).json({
+      error: 'No credits remaining',
+      credits: getUserCredits(req.user.id),
+    });
+  }
+  next();
+}
+
 // Generate ephemeral token for Realtime API WebRTC connection
-app.get('/api/realtime/token', async (req, res) => {
+app.get('/api/realtime/token', requireAuth, async (req, res) => {
   try {
     const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
       method: 'POST',
@@ -93,8 +138,8 @@ Examples of things users might say:
   }
 });
 
-// Generate UI code from a description (called when realtime function call triggers)
-app.post('/api/generate-ui', async (req, res) => {
+// Generate UI code from a description — costs 1 credit
+app.post('/api/generate-ui', requireCredits, async (req, res) => {
   try {
     const { description, componentType, currentCode } = req.body;
 
@@ -131,15 +176,21 @@ ${currentCode ? `The current UI code is:\n${currentCode}\n\nIncorporate the new 
       .replace(/```\n?/g, '')
       .trim();
 
-    res.json({ code });
+    // Deduct credit
+    const creditResult = useCredit(req.user.id);
+
+    res.json({
+      code,
+      credits: getUserCredits(req.user.id),
+    });
   } catch (error) {
     console.error('Error generating UI:', error);
     res.status(500).json({ error: 'Failed to generate UI' });
   }
 });
 
-// Modify existing UI code
-app.post('/api/modify-ui', async (req, res) => {
+// Modify existing UI code — costs 1 credit
+app.post('/api/modify-ui', requireCredits, async (req, res) => {
   try {
     const { currentCode, modification, targetElement } = req.body;
 
@@ -171,7 +222,13 @@ Rules:
       .replace(/```\n?/g, '')
       .trim();
 
-    res.json({ code });
+    // Deduct credit
+    const creditResult = useCredit(req.user.id);
+
+    res.json({
+      code,
+      credits: getUserCredits(req.user.id),
+    });
   } catch (error) {
     console.error('Error modifying UI:', error);
     res.status(500).json({ error: 'Failed to modify UI' });
@@ -179,7 +236,6 @@ Rules:
 });
 
 // Serve static files in production
-const __dirname = dirname(fileURLToPath(import.meta.url));
 app.use(express.static(join(__dirname, '..', 'client', 'dist')));
 app.get('*', (req, res) => {
   res.sendFile(join(__dirname, '..', 'client', 'dist', 'index.html'));

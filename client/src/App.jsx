@@ -1,21 +1,63 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useRealtimeVoice } from './hooks/useRealtimeVoice';
+import { usePhantomWallet } from './hooks/usePhantomWallet';
+import LoginScreen from './components/LoginScreen';
 import Toolbar from './components/Toolbar';
 import StatusBar from './components/StatusBar';
 import UIPreview from './components/UIPreview';
 import VoiceButton from './components/VoiceButton';
 import TranscriptPanel from './components/TranscriptPanel';
 import CodePanel from './components/CodePanel';
+import PaymentModal from './components/PaymentModal';
 
 export default function App() {
+  // Auth state
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // Credits state
+  const [credits, setCredits] = useState({ remaining: 0, totalPurchased: 0, totalUsed: 0 });
+
+  // UI builder state
   const [uiCode, setUiCode] = useState('');
   const [messages, setMessages] = useState([]);
   const [selectedElement, setSelectedElement] = useState(null);
   const [statusMsg, setStatusMsg] = useState({ message: '', type: 'info' });
   const [showTranscript, setShowTranscript] = useState(false);
   const [showCode, setShowCode] = useState(false);
+  const [showPayment, setShowPayment] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiSpeaking, setAiSpeaking] = useState(false);
+
+  const phantom = usePhantomWallet();
+
+  // Check auth on mount
+  useEffect(() => {
+    fetch('/api/auth/me', { credentials: 'include' })
+      .then(r => r.json())
+      .then(data => {
+        setUser(data.user);
+        if (data.user) fetchCredits();
+      })
+      .catch(() => {})
+      .finally(() => setAuthLoading(false));
+  }, []);
+
+  const fetchCredits = useCallback(async () => {
+    try {
+      const res = await fetch('/api/credits', { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setCredits(data);
+      }
+    } catch {}
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    setUser(null);
+    setCredits({ remaining: 0, totalPurchased: 0, totalUsed: 0 });
+  }, []);
 
   const handleFunctionCall = useCallback(async (fnName, args, callId) => {
     if (fnName === 'generate_ui') {
@@ -26,6 +68,7 @@ export default function App() {
         const res = await fetch('/api/generate-ui', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({
             description: args.description,
             componentType: args.component_type,
@@ -33,9 +76,17 @@ export default function App() {
           }),
         });
 
+        if (res.status === 402) {
+          setStatusMsg({ message: 'No credits! Purchase more to continue.', type: 'error' });
+          setShowPayment(true);
+          voice.sendFunctionResult(callId, { success: false, error: 'No credits remaining' });
+          return;
+        }
+
         const data = await res.json();
         if (data.code) {
           setUiCode(data.code);
+          if (data.credits) setCredits(data.credits);
           setStatusMsg({ message: 'UI generated!', type: 'success' });
           voice.sendFunctionResult(callId, { success: true, message: 'UI component generated and displayed' });
         } else {
@@ -58,6 +109,7 @@ export default function App() {
         const res = await fetch('/api/modify-ui', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({
             currentCode: uiCode,
             modification: args.modification,
@@ -65,9 +117,17 @@ export default function App() {
           }),
         });
 
+        if (res.status === 402) {
+          setStatusMsg({ message: 'No credits! Purchase more to continue.', type: 'error' });
+          setShowPayment(true);
+          voice.sendFunctionResult(callId, { success: false, error: 'No credits remaining' });
+          return;
+        }
+
         const data = await res.json();
         if (data.code) {
           setUiCode(data.code);
+          if (data.credits) setCredits(data.credits);
           setStatusMsg({ message: 'UI updated!', type: 'success' });
           voice.sendFunctionResult(callId, { success: true, message: 'UI modified successfully' });
         } else {
@@ -99,7 +159,6 @@ export default function App() {
 
   const handleElementSelected = useCallback((element) => {
     setSelectedElement(element);
-    // Inform the voice assistant about the selection
     if (voice.status === 'connected') {
       voice.sendTextMessage(
         `The user just tapped on a <${element.tagName?.toLowerCase()}> element containing: "${element.text}". They may want to modify this element.`
@@ -113,6 +172,36 @@ export default function App() {
     setStatusMsg({ message: 'UI cleared', type: 'info' });
     setTimeout(() => setStatusMsg({ message: '', type: 'info' }), 2000);
   }, []);
+
+  const handlePurchaseComplete = useCallback((result) => {
+    if (result.remaining !== undefined) {
+      setCredits(prev => ({ ...prev, remaining: result.remaining }));
+    }
+    fetchCredits();
+  }, [fetchCredits]);
+
+  // Show loading
+  if (authLoading) {
+    return (
+      <div style={{
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--bg)',
+      }}>
+        <svg width="32" height="32" viewBox="0 0 24 24" style={{ animation: 'spin 1s linear infinite' }}>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <circle cx="12" cy="12" r="10" stroke="var(--primary)" strokeWidth="3" fill="none" strokeDasharray="60" strokeLinecap="round" />
+        </svg>
+      </div>
+    );
+  }
+
+  // Show login if not authenticated
+  if (!user) {
+    return <LoginScreen />;
+  }
 
   return (
     <div style={{
@@ -129,6 +218,10 @@ export default function App() {
         onClearUI={handleClearUI}
         hasCode={!!uiCode}
         selectedElement={selectedElement}
+        user={user}
+        credits={credits}
+        onShowPayment={() => setShowPayment(true)}
+        onLogout={handleLogout}
       />
 
       {/* Status bar */}
@@ -212,6 +305,15 @@ export default function App() {
         code={uiCode}
         isOpen={showCode}
         onClose={() => setShowCode(false)}
+      />
+
+      {/* Payment modal */}
+      <PaymentModal
+        isOpen={showPayment}
+        onClose={() => setShowPayment(false)}
+        credits={credits}
+        phantom={phantom}
+        onPurchaseComplete={handlePurchaseComplete}
       />
 
       {/* Overlay for panels */}

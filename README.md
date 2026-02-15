@@ -1,61 +1,75 @@
 # Voice UI Builder
 
-Build UIs in real-time using your voice. Speak what you want, tap elements to select them, and watch your UI come to life.
+Build UIs in real-time using your voice. Speak what you want, tap elements to select them, and watch your UI come to life. Pay with USDC on Solana.
 
 Powered by OpenAI's Realtime API (WebRTC) for voice interaction and GPT-4o for UI code generation. Optimized for mobile/Android use as a PWA.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────┐
-│  Mobile Browser (PWA)                    │
-│  ┌─────────────┐  ┌──────────────────┐  │
-│  │ Voice Button │  │   UI Preview     │  │
-│  │  (WebRTC)    │  │   (iframe +      │  │
-│  │              │  │    Tailwind CSS)  │  │
-│  └──────┬───────┘  └──────────────────┘  │
-│         │ WebRTC                          │
-│         ▼                                │
-│  OpenAI Realtime API (gpt-4o-realtime)   │
-│         │ function calls                  │
-│         ▼                                │
-│  ┌──────────────┐                        │
-│  │ Express API   │──► OpenAI Chat API    │
-│  │ /api/generate │    (gpt-4o)           │
-│  │ /api/modify   │    generates HTML +   │
-│  │ /api/token    │    Tailwind CSS       │
-│  └──────────────┘                        │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│  Mobile Browser (Android PWA)                         │
+│  ┌────────────┐  ┌───────────┐  ┌─────────────────┐ │
+│  │ Login      │  │ Voice     │  │ UI Preview      │ │
+│  │ Google /   │  │ Button    │  │ (iframe +       │ │
+│  │ GitHub     │  │ (WebRTC)  │  │  Tailwind CSS)  │ │
+│  └────────────┘  └─────┬─────┘  └─────────────────┘ │
+│                        │ WebRTC                       │
+│  ┌─────────────────────▼──────────────────────────┐  │
+│  │  OpenAI Realtime API (gpt-4o-realtime)         │  │
+│  │  → function calls: generate_ui / modify_ui     │  │
+│  └────────────────────────────────────────────────┘  │
+│                        │                              │
+│  ┌─────────────────────▼──────────────────────────┐  │
+│  │  Express API Server                             │  │
+│  │  ├── /api/auth     (Google + GitHub OAuth)      │  │
+│  │  ├── /api/credits  (usage tracking + purchase)  │  │
+│  │  ├── /api/generate (GPT-4o → HTML/Tailwind)     │  │
+│  │  └── /api/modify   (GPT-4o → update code)      │  │
+│  └────────────────────────────────────────────────┘  │
+│                        │                              │
+│  ┌─────────────────────▼──────────────────────────┐  │
+│  │  Solana Blockchain                              │  │
+│  │  ├── USDC payments via Phantom wallet           │  │
+│  │  └── Anchor smart contract (on-chain credits)   │  │
+│  └────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## How It Works
 
-1. **Tap the mic button** to connect to OpenAI's Realtime API via WebRTC
-2. **Describe the UI** you want: "Create a login form with email and password fields"
-3. The AI assistant calls a `generate_ui` function which sends the description to GPT-4o
-4. GPT-4o generates HTML + Tailwind CSS code
-5. The **live preview** renders the generated UI immediately
-6. **Tap any element** in the preview to select it
-7. **Say modifications**: "Make the button bigger" or "Change the color to blue"
-8. The AI calls `modify_ui` to update the code
+1. **Sign in** with Google or GitHub
+2. **Get 10 free UI credits** on signup
+3. **Tap the mic button** to connect to OpenAI's Realtime API via WebRTC
+4. **Describe the UI** you want: "Create a login form with email and password fields"
+5. The AI calls `generate_ui` → GPT-4o generates HTML + Tailwind CSS → **live preview**
+6. **Tap any element** to select it, then say modifications
+7. Each generation/modification costs **1 credit**
+8. When credits run out, **connect Phantom wallet** and pay **2 USDC for 10 more credits**
+
+## Payments
+
+- **Blockchain:** Solana (devnet for testing, mainnet for production)
+- **Currency:** USDC (SPL token)
+- **Wallet:** Phantom (mobile-native on Android)
+- **Flow:** Server builds a USDC transfer transaction → user signs in Phantom → server verifies on-chain → credits added
+- **Smart contract:** Anchor program at `programs/voice_ui_credits/` for on-chain credit tracking
 
 ## Setup
 
 ### Prerequisites
 
 - Node.js 18+
-- OpenAI API key with access to Realtime API and GPT-4o
+- OpenAI API key (Realtime API + GPT-4o access)
+- Google OAuth credentials (from Google Cloud Console)
+- GitHub OAuth app (from GitHub Developer Settings)
+- Phantom wallet (your Solana wallet public key)
 
 ### Install
 
 ```bash
-# Install root dependencies
 npm install
-
-# Install server dependencies
 cd server && npm install && cd ..
-
-# Install client dependencies
 cd client && npm install && cd ..
 ```
 
@@ -63,13 +77,28 @@ cd client && npm install && cd ..
 
 ```bash
 cp .env.example .env
-# Edit .env and add your OpenAI API key
+```
+
+Edit `.env` with your credentials:
+
+```env
+# OpenAI
+OPENAI_API_KEY=sk-...
+
+# OAuth
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GITHUB_CLIENT_ID=...
+GITHUB_CLIENT_SECRET=...
+
+# Solana — your Phantom wallet public key
+SOLANA_OWNER_WALLET=YourPhantomWalletPublicKeyHere
+SOLANA_RPC_URL=https://api.devnet.solana.com
 ```
 
 ### Run
 
 ```bash
-# Run both server and client
 npm run dev
 ```
 
@@ -78,24 +107,50 @@ npm run dev
 
 ### Android / Mobile
 
-Open `http://<your-ip>:5173` on your Android phone's browser. The app is PWA-enabled — you can add it to your home screen for a native-like experience.
+Open `http://<your-ip>:5173` on your Android phone's browser. The app is PWA-enabled — add it to your home screen for a native-like experience. Phantom wallet integrates natively on mobile.
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
-|---|---|---|
-| `/api/realtime/token` | GET | Generate ephemeral token for WebRTC connection |
-| `/api/generate-ui` | POST | Generate UI code from description |
-| `/api/modify-ui` | POST | Modify existing UI code |
+| Endpoint | Method | Auth | Description |
+|---|---|---|---|
+| `/api/auth/google` | GET | - | Start Google OAuth flow |
+| `/api/auth/github` | GET | - | Start GitHub OAuth flow |
+| `/api/auth/me` | GET | - | Get current user |
+| `/api/auth/wallet` | POST | Yes | Link Solana wallet to account |
+| `/api/auth/logout` | POST | Yes | Sign out |
+| `/api/credits` | GET | Yes | Get credit balance |
+| `/api/credits/payment-info` | GET | - | Get pricing and network info |
+| `/api/credits/purchase` | POST | Yes | Build USDC purchase transaction |
+| `/api/credits/verify` | POST | Yes | Verify payment and add credits |
+| `/api/realtime/token` | GET | Yes | Generate ephemeral WebRTC token |
+| `/api/generate-ui` | POST | Yes | Generate UI (costs 1 credit) |
+| `/api/modify-ui` | POST | Yes | Modify UI (costs 1 credit) |
+
+## Smart Contract
+
+The Anchor program in `programs/voice_ui_credits/` handles:
+
+- **User account creation** with 10 free credits (PDA per user)
+- **USDC credit purchases** (2 USDC → 10 credits)
+- **Credit deduction** (only callable by service authority)
+- **On-chain credit balance tracking**
+
+To deploy to devnet:
+```bash
+anchor build
+anchor deploy --provider.cluster devnet
+```
 
 ## Tech Stack
 
 - **Frontend:** React 18 + Vite (mobile-optimized PWA)
-- **Backend:** Express.js
+- **Backend:** Express.js + Passport.js (OAuth)
 - **Voice:** OpenAI Realtime API via WebRTC
-- **Code Gen:** OpenAI GPT-4o (upgradeable to Codex when API available)
-- **Styling:** Tailwind CSS (loaded via CDN in preview)
+- **Code Gen:** OpenAI GPT-4o
+- **Payments:** Solana + USDC + Phantom wallet
+- **Smart Contract:** Anchor (Rust)
+- **Styling:** Tailwind CSS (CDN in preview)
 
 ## Note on GPT-5.3-Codex-Spark
 
-This app is designed to work with OpenAI's Codex models. Currently using `gpt-4o` for code generation since GPT-5.3-Codex-Spark is only available in ChatGPT Pro (not the API yet). When the Codex Spark API becomes available, update the model in `server/index.js` to take advantage of the 1000+ tokens/sec generation speed on Cerebras hardware.
+Currently using `gpt-4o` for code generation since GPT-5.3-Codex-Spark is only available in ChatGPT Pro (not the API yet). When the Codex Spark API becomes available, update the model in `server/index.js` to get 1000+ tokens/sec generation on Cerebras hardware.
