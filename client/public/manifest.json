@@ -1,0 +1,10 @@
+{
+  "name": "Voice UI Builder",
+  "short_name": "VoiceUI",
+  "description": "Build UIs with your voice using AI",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f0f0f",
+  "theme_color": "#6366f1",
+  "icons": []
+}

@@ -1,0 +1,137 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --primary: #6366f1;
+  --primary-dark: #4f46e5;
+  --primary-light: #818cf8;
+  --bg: #0f0f0f;
+  --bg-surface: #1a1a1a;
+  --bg-elevated: #252525;
+  --text: #f5f5f5;
+  --text-muted: #a3a3a3;
+  --border: #333;
+  --success: #22c55e;
+  --danger: #ef4444;
+  --warning: #eab308;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Mobile-optimized scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+/* Pulsing animation for voice button */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@keyframes pulse-dot {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+.voice-active .pulse-ring {
+  animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+.voice-active .pulse-dot {
+  animation: pulse-dot 1s ease-in-out infinite;
+}
+
+/* Audio visualizer bars */
+@keyframes audio-bar {
+  0%, 100% { height: 4px; }
+  50% { height: 20px; }
+}
+
+.audio-bar {
+  width: 3px;
+  background: var(--primary-light);
+  border-radius: 2px;
+  animation: audio-bar 0.8s ease-in-out infinite;
+}
+
+.audio-bar:nth-child(2) { animation-delay: 0.1s; }
+.audio-bar:nth-child(3) { animation-delay: 0.2s; }
+.audio-bar:nth-child(4) { animation-delay: 0.3s; }
+.audio-bar:nth-child(5) { animation-delay: 0.15s; }
+
+/* Selected element highlight */
+.element-selected {
+  outline: 2px solid var(--primary) !important;
+  outline-offset: 2px;
+  position: relative;
+}
+
+.element-selected::after {
+  content: 'Selected';
+  position: absolute;
+  top: -24px;
+  left: 0;
+  background: var(--primary);
+  color: white;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+/* Fade in animation */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Status indicator */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot.connected { background: var(--success); }
+.status-dot.connecting { background: var(--warning); animation: pulse-dot 1s infinite; }
+.status-dot.disconnected { background: var(--danger); }
