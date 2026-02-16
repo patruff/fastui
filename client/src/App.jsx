@@ -10,6 +10,7 @@ import TranscriptPanel from './components/TranscriptPanel';
 import CodePanel from './components/CodePanel';
 import PaymentModal from './components/PaymentModal';
 import DownloadModal from './components/DownloadModal';
+import { DEFAULT_LANDING_PAGE } from './defaultTemplate';
 
 export default function App() {
   // Auth state
@@ -20,7 +21,7 @@ export default function App() {
   const [credits, setCredits] = useState({ remaining: 0, totalPurchased: 0, totalUsed: 0 });
 
   // UI builder state
-  const [uiCode, setUiCode] = useState('');
+  const [uiCode, setUiCode] = useState(DEFAULT_LANDING_PAGE);
   const [messages, setMessages] = useState([]);
   const [selectedElement, setSelectedElement] = useState(null);
   const [statusMsg, setStatusMsg] = useState({ message: '', type: 'info' });

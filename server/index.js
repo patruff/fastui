@@ -10,6 +10,17 @@ import { setupPassport, requireAuth } from './lib/auth.js';
 import { initSolana, useCredit, hasCredits, getUserCredits } from './lib/solana.js';
 import authRoutes from './routes/auth.js';
 import creditsRoutes from './routes/credits.js';
+import {
+  GenerateRequestSchema,
+  ModifyRequestSchema,
+  GenerateResponseSchema,
+  ModifyResponseSchema,
+  sanitizeHtml,
+  validateHtmlOutput,
+  validateModification,
+  getGenerateSystemPrompt,
+  getModifySystemPrompt,
+} from './lib/validation.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '..', '.env') });
@@ -141,46 +152,55 @@ Examples of things users might say:
 // Generate UI code from a description — costs 1 credit
 app.post('/api/generate-ui', requireCredits, async (req, res) => {
   try {
-    const { description, componentType, currentCode } = req.body;
-
-    const systemPrompt = `You are a UI code generator. Generate clean, modern HTML with inline Tailwind CSS classes.
-
-Rules:
-- Output ONLY the HTML code, no explanations or markdown
-- Use Tailwind CSS utility classes for all styling
-- Make it mobile-responsive by default
-- Use modern, clean design with good spacing and typography
-- Include placeholder content that matches the description
-- Use semantic HTML elements
-- Make interactive elements look clickable (hover states, cursors)
-- Use a cohesive color scheme (indigo/violet primary, gray neutrals)
-- Add data-component-id attributes to major elements for click selection
-
-${currentCode ? `The current UI code is:\n${currentCode}\n\nIncorporate the new component into the existing layout.` : 'Start fresh with this component.'}`;
+    // Validate request
+    const parsed = GenerateRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid request', details: parsed.error.issues });
+    }
+    const { description, componentType, currentCode } = parsed.data;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: getGenerateSystemPrompt(currentCode) },
         {
           role: 'user',
           content: `Generate a ${componentType || 'UI'} component: ${description}`,
         },
       ],
-      max_tokens: 4000,
+      max_tokens: 8000,
       temperature: 0.7,
+      response_format: { type: 'json_object' },
     });
 
-    const code = completion.choices[0].message.content
-      .replace(/```html\n?/g, '')
-      .replace(/```\n?/g, '')
-      .trim();
+    const raw = completion.choices[0].message.content.trim();
+    let structured;
+    try {
+      structured = JSON.parse(raw);
+    } catch {
+      // Fallback: treat entire response as HTML
+      structured = { html: raw.replace(/```html\n?/g, '').replace(/```\n?/g, '').trim() };
+    }
+
+    // Validate structured response
+    const validated = GenerateResponseSchema.safeParse(structured);
+    let code = validated.success ? validated.data.html : (structured.html || raw);
+
+    // Sanitize output
+    code = sanitizeHtml(code);
+
+    // Validate HTML structure
+    const htmlCheck = validateHtmlOutput(code);
+    if (!htmlCheck.valid) {
+      console.warn('HTML validation warnings:', htmlCheck.errors);
+    }
 
     // Deduct credit
-    const creditResult = useCredit(req.user.id);
+    useCredit(req.user.id);
 
     res.json({
       code,
+      component_type: validated.success ? validated.data.component_type : componentType,
       credits: getUserCredits(req.user.id),
     });
   } catch (error) {
@@ -192,41 +212,65 @@ ${currentCode ? `The current UI code is:\n${currentCode}\n\nIncorporate the new 
 // Modify existing UI code — costs 1 credit
 app.post('/api/modify-ui', requireCredits, async (req, res) => {
   try {
-    const { currentCode, modification, targetElement } = req.body;
+    // Validate request
+    const parsed = ModifyRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid request', details: parsed.error.issues });
+    }
+    const { currentCode, modification, targetElement } = parsed.data;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
-        {
-          role: 'system',
-          content: `You are a UI code modifier. You receive existing HTML with Tailwind CSS and a modification request.
-
-Rules:
-- Output ONLY the modified HTML code, no explanations or markdown
-- Keep all existing elements unless explicitly asked to remove them
-- Maintain the same coding style (Tailwind CSS classes)
-- Preserve data-component-id attributes
-- Make minimal changes to achieve the requested modification`,
-        },
+        { role: 'system', content: getModifySystemPrompt() },
         {
           role: 'user',
           content: `Current code:\n${currentCode}\n\nModification: ${modification}${targetElement ? `\nTarget element: ${targetElement}` : ''}`,
         },
       ],
-      max_tokens: 4000,
+      max_tokens: 8000,
       temperature: 0.5,
+      response_format: { type: 'json_object' },
     });
 
-    const code = completion.choices[0].message.content
-      .replace(/```html\n?/g, '')
-      .replace(/```\n?/g, '')
-      .trim();
+    const raw = completion.choices[0].message.content.trim();
+    let structured;
+    try {
+      structured = JSON.parse(raw);
+    } catch {
+      structured = { html: raw.replace(/```html\n?/g, '').replace(/```\n?/g, '').trim(), category: 'content' };
+    }
+
+    // Validate structured response
+    const validated = ModifyResponseSchema.safeParse(structured);
+    let code = validated.success ? validated.data.html : (structured.html || raw);
+    const category = validated.success ? validated.data.category : (structured.category || 'content');
+
+    // Sanitize output
+    code = sanitizeHtml(code);
+
+    // Validate HTML structure
+    const htmlCheck = validateHtmlOutput(code);
+    if (!htmlCheck.valid) {
+      console.warn('HTML validation warnings:', htmlCheck.errors);
+    }
+
+    // Diff safety — make sure the AI didn't nuke the page
+    const diffCheck = validateModification(currentCode, code, category);
+    if (!diffCheck.safe) {
+      console.warn('Modification safety warnings:', diffCheck.warnings);
+      // Still return the code, but flag it — don't silently eat credits on bad output
+    }
 
     // Deduct credit
-    const creditResult = useCredit(req.user.id);
+    useCredit(req.user.id);
 
     res.json({
       code,
+      category,
+      target: validated.success ? validated.data.target : targetElement,
+      description: validated.success ? validated.data.description : modification,
+      warnings: diffCheck.safe ? undefined : diffCheck.warnings,
       credits: getUserCredits(req.user.id),
     });
   } catch (error) {
